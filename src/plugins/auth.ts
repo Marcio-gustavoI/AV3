@@ -32,7 +32,8 @@ function rotaPublica(url: string): boolean {
   return (
     path === '/saude' ||
     path === '/api/v1/auth/login' ||
-    path.startsWith('/docs')
+    path.startsWith('/docs') ||
+    path.startsWith('/api/v1/public')
   );
 }
 

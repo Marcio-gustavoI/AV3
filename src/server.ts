@@ -1,13 +1,25 @@
 import 'dotenv/config';
+import type { Worker } from 'bullmq';
+import type { ScheduledTask } from 'node-cron';
 import { buildApp } from './app.js';
 import { env } from './config/env.js';
+import { iniciarCronAnalitico } from './jobs/cron.js';
 import { logger } from './lib/logger.js';
 import { prisma } from './lib/prisma.js';
+import { PrismaAnaliticoRepository } from './modules/analitico/analitico.repository.js';
+import { AnaliticoService } from './modules/analitico/analitico.service.js';
+import { PrismaJobRepository } from './modules/job/job.repository.js';
+import type { PayloadFilaRelatorio } from './modules/job/job.service.js';
+import { PrismaParametroRepository } from './modules/parametro/parametro.repository.js';
+import { iniciarWorkerRelatorio } from './workers/relatorio.worker.js';
 
 async function start(): Promise<void> {
   const app = await buildApp();
 
-  // Graceful shutdown (A2-05)
+  let workerRelatorio: Worker<PayloadFilaRelatorio> | null = null;
+  let cronAnalitico: ScheduledTask | null = null;
+
+  // Graceful shutdown (A2-05 + encerramento limpo de Worker BullMQ e Cron da AV3)
   let isShuttingDown = false;
 
   async function shutdown(signal: string): Promise<void> {
@@ -24,6 +36,14 @@ async function start(): Promise<void> {
     }, env.SHUTDOWN_TIMEOUT_MS);
 
     try {
+      if (cronAnalitico) {
+        cronAnalitico.stop();
+        cronAnalitico = null;
+      }
+      if (workerRelatorio) {
+        await workerRelatorio.close();
+        workerRelatorio = null;
+      }
       await app.close();
       await prisma.$disconnect();
       logger.info('Servidor e conexões encerrados com sucesso.');
@@ -54,7 +74,7 @@ async function start(): Promise<void> {
     ) {
       const sinal =
         'signal' in msg && typeof (msg as { signal?: unknown }).signal === 'string'
-          ? ((msg as { signal: string }).signal)
+          ? (msg as { signal: string }).signal
           : 'SIGINT';
       void shutdown(sinal);
     }
@@ -64,6 +84,25 @@ async function start(): Promise<void> {
     await app.listen({ port: env.PORT, host: env.HOST });
     logger.info(`🚀 greencode rodando em http://${env.HOST}:${env.PORT}`);
     logger.info(`📖 Documentação: http://${env.HOST}:${env.PORT}/docs`);
+
+    // Inicialização de Worker BullMQ e Cron Analítico após o servidor subir (AV3)
+    const analiticoService = new AnaliticoService(
+      new PrismaAnaliticoRepository(prisma),
+      new PrismaParametroRepository(prisma),
+    );
+
+    if (env.WORKER_HABILITADO) {
+      workerRelatorio = iniciarWorkerRelatorio({
+        jobRepo: new PrismaJobRepository(prisma),
+        analiticoService,
+      });
+      logger.info('⚙️ Worker BullMQ (fila relatorio) iniciado.');
+    }
+
+    if (env.CRON_HABILITADO) {
+      cronAnalitico = iniciarCronAnalitico(analiticoService, env.CRON_ANALITICO);
+    }
+
     if (typeof process.send === 'function') {
       process.send('PRONTO');
     }

@@ -20,7 +20,7 @@ export async function limparBanco(): Promise<void> {
   await prisma.$transaction([
     prisma.$executeRawUnsafe("SET LOCAL session_replication_role = 'replica';"),
     prisma.$executeRawUnsafe(
-      'TRUNCATE TABLE auditorias, movimentacoes, equipamentos, lotes, contratos, organizacoes, parametros, usuarios RESTART IDENTITY CASCADE;',
+      'TRUNCATE TABLE jobs_relatorios, resultados_analiticos, parceiros_externos, auditorias, movimentacoes, equipamentos, lotes, contratos, organizacoes, parametros, usuarios RESTART IDENTITY CASCADE;',
     ),
     prisma.$executeRawUnsafe('ALTER SEQUENCE seq_codigo_barras RESTART WITH 1;'),
   ]);

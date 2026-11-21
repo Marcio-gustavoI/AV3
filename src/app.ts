@@ -8,6 +8,10 @@ import { env } from './config/env.js';
 import { type Relogio, RelogioReal } from './domain/index.js';
 import { logger } from './lib/logger.js';
 import { prisma } from './lib/prisma.js';
+import { criarFila } from './lib/redis.js';
+import { registrarRotasAnalitico } from './modules/analitico/analitico.controller.js';
+import { PrismaAnaliticoRepository } from './modules/analitico/analitico.repository.js';
+import { AnaliticoService } from './modules/analitico/analitico.service.js';
 import { registrarRotasAuditoria } from './modules/auditoria/auditoria.controller.js';
 import {
   PrismaAuditoriaRepository,
@@ -22,6 +26,13 @@ import { ContratoService } from './modules/contrato/contrato.service.js';
 import { registrarRotasEquipamento } from './modules/equipamento/equipamento.controller.js';
 import { PrismaEquipamentoRepository } from './modules/equipamento/equipamento.repository.js';
 import { EquipamentoService } from './modules/equipamento/equipamento.service.js';
+import { registrarRotasJob } from './modules/job/job.controller.js';
+import { PrismaJobRepository } from './modules/job/job.repository.js';
+import {
+  JobService,
+  PublicadorFilaBullMQ,
+  type PublicadorFilaRelatorio,
+} from './modules/job/job.service.js';
 import { registrarRotasLote } from './modules/lote/lote.controller.js';
 import { PrismaLoteRepository } from './modules/lote/lote.repository.js';
 import { LoteService } from './modules/lote/lote.service.js';
@@ -34,6 +45,11 @@ import { OrganizacaoService } from './modules/organizacao/organizacao.service.js
 import { registrarRotasParametro } from './modules/parametro/parametro.controller.js';
 import { PrismaParametroRepository } from './modules/parametro/parametro.repository.js';
 import { ParametroService } from './modules/parametro/parametro.service.js';
+import { registrarRotasParceiro } from './modules/parceiro/parceiro.controller.js';
+import { PrismaParceiroRepository } from './modules/parceiro/parceiro.repository.js';
+import { ParceiroService } from './modules/parceiro/parceiro.service.js';
+import { registrarRotasPublicas } from './modules/public/public.controller.js';
+import { PublicService } from './modules/public/public.service.js';
 import { registrarRotasRelatorio } from './modules/relatorio/relatorio.controller.js';
 import { PrismaRelatorioRepository } from './modules/relatorio/relatorio.repository.js';
 import { RelatorioService } from './modules/relatorio/relatorio.service.js';
@@ -43,10 +59,12 @@ import { UsuarioService } from './modules/usuario/usuario.service.js';
 import { registrarHookAutenticacao } from './plugins/auth.js';
 import { registrarErrorHandler } from './plugins/error-handler.js';
 import { registrarSwagger } from './plugins/swagger.js';
+import { NOME_FILA_RELATORIO } from './workers/relatorio.worker.js';
 
 export interface OpcoesBuildApp {
   relogio?: Relogio | undefined;
   corsOrigens?: string[] | undefined;
+  publicadorFila?: PublicadorFilaRelatorio | undefined;
 }
 
 export async function buildApp(opcoes?: OpcoesBuildApp) {
@@ -87,7 +105,7 @@ export async function buildApp(opcoes?: OpcoesBuildApp) {
   await app.register(cors, {
     origin: origensPermitidas.length > 0 ? origensPermitidas : false,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Api-Key'],
   });
 
   // Rate limit (habilitado por rota, ex.: POST /api/v1/auth/login)
@@ -211,7 +229,40 @@ export async function buildApp(opcoes?: OpcoesBuildApp) {
   const auditoriaService = new AuditoriaService(auditoriaRepo);
   const relatorioService = new RelatorioService(relatorioRepo, parametroRepo);
 
-  // Registro das rotas /api/v1
+  // Dependências AV3 (Camada Analítica, Parceiros, Jobs Assíncronos e API Pública)
+  const analiticoRepo = new PrismaAnaliticoRepository(prisma);
+  const analiticoService = new AnaliticoService(analiticoRepo, parametroRepo, relogio);
+  const parceiroRepo = new PrismaParceiroRepository(prisma);
+  const parceiroService = new ParceiroService(
+    parceiroRepo,
+    auditoriaRepo,
+    transacao,
+    env.API_KEY_PREFIX,
+  );
+  const jobRepo = new PrismaJobRepository(prisma);
+
+  let filaRelatorio: ReturnType<typeof criarFila> | null = null;
+  const publicadorFila: PublicadorFilaRelatorio = opcoes?.publicadorFila ?? {
+    publicar: async (payload) => {
+      if (!filaRelatorio) {
+        filaRelatorio = criarFila(NOME_FILA_RELATORIO);
+      }
+      const bullPublisher = new PublicadorFilaBullMQ(filaRelatorio);
+      await bullPublisher.publicar(payload);
+    },
+  };
+
+  app.addHook('onClose', async () => {
+    if (filaRelatorio) {
+      await filaRelatorio.close();
+      filaRelatorio = null;
+    }
+  });
+
+  const jobService = new JobService(jobRepo, publicadorFila);
+  const publicService = new PublicService(equipamentoRepo, loteService, jobService);
+
+  // Registro das rotas /api/v1 (internas + novas AV3)
   await app.register(
     async (api) => {
       registrarRotasAuth(api, authService);
@@ -224,8 +275,19 @@ export async function buildApp(opcoes?: OpcoesBuildApp) {
       registrarRotasMovimentacao(api, movimentacaoService);
       registrarRotasRelatorio(api, relatorioService);
       registrarRotasAuditoria(api, auditoriaService);
+      registrarRotasAnalitico(api, analiticoService);
+      registrarRotasParceiro(api, parceiroService);
+      registrarRotasJob(api, jobService);
     },
     { prefix: '/api/v1' },
+  );
+
+  // Registro das rotas da API Pública (/api/v1/public/* — X-Api-Key)
+  await app.register(
+    async (pub) => {
+      registrarRotasPublicas(pub, publicService, parceiroRepo);
+    },
+    { prefix: '/api/v1/public' },
   );
 
   return app;

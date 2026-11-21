@@ -91,4 +91,4 @@ jobs:
         run: npm run lint
 
       - name: Executar testes unitários (sem dependência de container Docker Linux no runner Windows)
-        run: npx vitest run --config vitest.config.ts tests/unit
+        run: npx vitest run --config vitest.config.ts tests/unit tests/analitico tests/parceiro tests/job tests/public

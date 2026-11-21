@@ -20,6 +20,22 @@ interface Env {
   LOG_LEVEL: string;
   AUDITORIA_RETENCAO_DIAS: number;
   SHUTDOWN_TIMEOUT_MS: number;
+  // AV3
+  REDIS_HOST: string;
+  REDIS_PORT: number;
+  REDIS_PASSWORD: string;
+  WORKER_HABILITADO: boolean;
+  WORKER_CONCORRENCIA: number;
+  CRON_ANALITICO: string;
+  CRON_HABILITADO: boolean;
+  API_KEY_PREFIX: string;
+  API_KEY_RATE_LIMIT_MAX: number;
+}
+
+function optionalBoolean(key: string, defaultValue: boolean): boolean {
+  const val = process.env[key];
+  if (!val || val.trim() === '') return defaultValue;
+  return ['true', '1', 'sim', 'yes'].includes(val.trim().toLowerCase());
 }
 
 function requiredString(key: string): string {
@@ -106,6 +122,24 @@ function loadEnv(): Env {
   results.SHUTDOWN_TIMEOUT_MS = requiredInt('SHUTDOWN_TIMEOUT_MS', 10000);
   results.PORT = requiredInt('PORT', 3000);
   results.HOST = optionalString('HOST', '0.0.0.0');
+
+  // --- AV3: Redis, worker, cron e API pública ---
+  const emTeste = results.NODE_ENV === 'test';
+  results.REDIS_HOST = optionalString('REDIS_HOST', 'localhost');
+  results.REDIS_PORT = requiredInt('REDIS_PORT', 6379);
+  results.REDIS_PASSWORD = optionalString('REDIS_PASSWORD', '');
+  results.WORKER_HABILITADO = optionalBoolean('WORKER_HABILITADO', !emTeste);
+  results.WORKER_CONCORRENCIA = requiredInt('WORKER_CONCORRENCIA', 2);
+  if (results.WORKER_CONCORRENCIA < 1) {
+    errors.push(`WORKER_CONCORRENCIA deve ser no mínimo 1 (tem ${results.WORKER_CONCORRENCIA})`);
+  }
+  results.CRON_ANALITICO = optionalString('CRON_ANALITICO', '0 2 * * *');
+  results.CRON_HABILITADO = optionalBoolean('CRON_HABILITADO', !emTeste);
+  results.API_KEY_PREFIX = optionalString('API_KEY_PREFIX', 'greencode_');
+  results.API_KEY_RATE_LIMIT_MAX = requiredInt('API_KEY_RATE_LIMIT_MAX', 100);
+  if (results.API_KEY_RATE_LIMIT_MAX < 1) {
+    errors.push(`API_KEY_RATE_LIMIT_MAX deve ser no mínimo 1 (tem ${results.API_KEY_RATE_LIMIT_MAX})`);
+  }
 
   if (errors.length > 0) {
     const msg = [

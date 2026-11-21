@@ -37,8 +37,26 @@ services:
       retries: 10
       start_period: 10s
 
+  # Redis 7 — backend da fila BullMQ de relatórios assíncronos (AV3, Pilar 3)
+  redis:
+    image: redis:7-alpine
+    container_name: greencode_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
 volumes:
   greencode_pgdata:
     name: greencode_pgdata
   greencode_pgdata_test:
     name: greencode_pgdata_test
+  redis_data:
+    name: greencode_redis_data

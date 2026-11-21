@@ -23,7 +23,7 @@ API RESTful monolítica construída com **Node.js (>= 22)**, **TypeScript strict
 
 - **Node.js:** `>= 22.0.0` (LTS atual; definido em `.nvmrc` e `package.json#engines`)
 - **npm:** `>= 10.0.0`
-- **Banco de Dados:** Docker Desktop / Docker Engine com Docker Compose v2 **ou** instância local do PostgreSQL 16+
+- **Banco de Dados e Fila:** Docker Desktop / Docker Engine com Docker Compose v2 (sobe PostgreSQL 16 + Redis 7) **ou** instâncias locais de PostgreSQL 16+ e Redis 7+
 - **Git:** `>= 2.30`
 
 ---
@@ -169,6 +169,16 @@ npm run test:db:preparar
 npm test
 ```
 
+### Instalação do Redis 7+ (sem Docker)
+
+- **Ubuntu 24.04 LTS e derivados:**
+  ```bash
+  sudo apt update && sudo apt install -y redis-server
+  sudo systemctl enable --now redis-server
+  redis-cli ping   # Deve retornar PONG
+  ```
+- **Windows 10/11:** utilize o serviço `redis` incluído no `docker-compose.yml` (`docker compose up -d redis`), ou instale via **WSL2 (Ubuntu)** com os comandos acima.
+
 ---
 
 ## 6. Variáveis de Ambiente (`.env`)
@@ -191,6 +201,15 @@ Todas as variáveis são validadas na inicialização (`src/config/env.ts`). Cas
 | `LOG_MAX_SIZE` | Não | `10m` | Tamanho máximo de cada arquivo de log antes da rotação (`A1-17`) |
 | `AUDITORIA_RETENCAO_DIAS` | Não | `180` | Dias de retenção no comando `limpar-auditoria` (**mínimo 180**) |
 | `SHUTDOWN_TIMEOUT_MS` | Não | `10000` | Timeout máximo em ms para aguardar requisições no graceful shutdown |
+| `REDIS_HOST` | Não | `localhost` | Host do servidor Redis (fila BullMQ — AV3) |
+| `REDIS_PORT` | Não | `6379` | Porta do servidor Redis (AV3) |
+| `REDIS_PASSWORD` | Não | `""` | Senha do Redis, se configurada (AV3) |
+| `WORKER_HABILITADO` | Não | `true` (`false` em `test`) | Habilita o consumidor BullMQ no processo do servidor (AV3) |
+| `WORKER_CONCORRENCIA` | Não | `2` | Número de jobs simultâneos processados pelo worker BullMQ (AV3) |
+| `CRON_ANALITICO` | Não | `0 2 * * *` | Expressão `node-cron` para cálculos analíticos recorrentes (AV3) |
+| `CRON_HABILITADO` | Não | `true` (`false` em `test`) | Habilita o agendamento cron no processo do servidor (AV3) |
+| `API_KEY_PREFIX` | Não | `greencode_` | Prefixo das chaves geradas para parceiros externos (AV3) |
+| `API_KEY_RATE_LIMIT_MAX` | Não | `100` | Limite de requisições por minuto por `X-Api-Key` na API Pública (AV3) |
 
 ---
 

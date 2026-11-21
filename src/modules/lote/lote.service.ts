@@ -199,7 +199,7 @@ export class LoteService {
 
         await this.auditoriaRepo.registrar(
           {
-            usuarioId: ator.id,
+            usuarioId: ator.id || null,
             acao: 'CRIAR',
             entidade: 'Equipamento',
             entidadeId: eqCriado.id,
@@ -220,7 +220,7 @@ export class LoteService {
 
       await this.auditoriaRepo.registrar(
         {
-          usuarioId: ator.id,
+          usuarioId: ator.id || null,
           acao: 'CRIAR',
           entidade: 'Lote',
           entidadeId: loteCriado.id,

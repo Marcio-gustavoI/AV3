@@ -27,6 +27,10 @@ export async function registrarSwagger(app: FastifyInstance): Promise<void> {
         { name: 'Movimentações', description: 'Transições de status e estado físico (R3, R4, R5, R10)' },
         { name: 'Relatórios', description: 'Resumo operacional e cálculo financeiro Decimal (R8)' },
         { name: 'Auditoria', description: 'Consulta ao journal imutável de auditoria (A1-16, A1-24)' },
+        { name: 'Analítico', description: 'Camada analítica: eficiência operacional, rentabilidade e vida útil (AV3)' },
+        { name: 'Parceiros', description: 'Gestão de parceiros externos e chaves X-Api-Key (exclusivo ADMIN, AV3)' },
+        { name: 'Jobs', description: 'Processamento assíncrono de relatórios via BullMQ + Redis (AV3)' },
+        { name: 'API Pública', description: 'Endpoints públicos autenticados por X-Api-Key com rate limit por chave (AV3)' },
       ],
       components: {
         securitySchemes: {
@@ -35,6 +39,12 @@ export async function registrarSwagger(app: FastifyInstance): Promise<void> {
             scheme: 'bearer',
             bearerFormat: 'JWT',
             description: 'Informe o token JWT obtido em POST /api/v1/auth/login',
+          },
+          apiKeyAuth: {
+            type: 'apiKey',
+            in: 'header',
+            name: 'X-Api-Key',
+            description: 'Chave de API do parceiro externo (ex.: greencode_<uuid>) para rotas /api/v1/public/*',
           },
         },
       },
