@@ -13,7 +13,10 @@ import {
   PublicadorFilaBullMQ,
   type PublicadorFilaRelatorio,
 } from '../../src/modules/job/job.service.js';
-import { processarJobRelatorio } from '../../src/workers/relatorio.worker.js';
+import {
+  fecharWorker,
+  processarJobRelatorio,
+} from '../../src/workers/relatorio.worker.js';
 
 describe('JobService e Worker de Relatórios (AV3 — Pilar 3)', () => {
   let jobRepo: {
@@ -152,8 +155,15 @@ describe('JobService e Worker de Relatórios (AV3 — Pilar 3)', () => {
     });
     expect(jobRepo.atualizar).toHaveBeenCalledWith(
       'job-1',
+      expect.objectContaining({ status: StatusJobRelatorio.PROCESSANDO, progresso: 10 }),
+    );
+    expect(jobRepo.atualizar).toHaveBeenCalledWith('job-1', { progresso: 40 });
+    expect(jobRepo.atualizar).toHaveBeenCalledWith('job-1', { progresso: 80 });
+    expect(jobRepo.atualizar).toHaveBeenCalledWith(
+      'job-1',
       expect.objectContaining({ status: StatusJobRelatorio.CONCLUIDO, progresso: 100 }),
     );
+    await expect(fecharWorker()).resolves.toBeUndefined();
 
     await processarJobRelatorio(
       { jobId: 'job-2', tipo: TipoJobRelatorio.RENTABILIDADE },

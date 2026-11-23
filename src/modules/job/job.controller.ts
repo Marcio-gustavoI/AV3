@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import { Type } from '@sinclair/typebox';
+import { converterParaCsv } from '../../lib/csv.js';
 import { obterUsuarioRequisicao } from '../../plugins/auth.js';
 import { TipoJobRelatorio } from './job.repository.js';
 import type { JobService } from './job.service.js';
@@ -100,18 +101,6 @@ const ResultadoPendenteResponseSchema = Type.Object(
   },
 );
 
-function serializarCsvSimples(resultado: unknown): string {
-  if (resultado && typeof resultado === 'object' && !Array.isArray(resultado)) {
-    const linhas = ['chave,valor'];
-    for (const [k, v] of Object.entries(resultado as Record<string, unknown>)) {
-      const valorTexto = typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v ?? '');
-      linhas.push(`"${k.replace(/"/g, '""')}","${valorTexto.replace(/"/g, '""')}"`);
-    }
-    return linhas.join('\n');
-  }
-  return `valor\n"${JSON.stringify(resultado).replace(/"/g, '""')}"`;
-}
-
 /**
  * Rotas internas de Jobs Assíncronos (AV3, Pilar 3 — autenticadas por JWT).
  */
@@ -189,7 +178,7 @@ export function registrarRotasJob(app: FastifyInstance, jobService: JobService):
       }
 
       if (request.query.formato === 'csv') {
-        const csv = serializarCsvSimples(dados.resultado);
+        const csv = converterParaCsv(dados.resultado);
         return reply
           .status(200)
           .header('Content-Type', 'text/csv; charset=utf-8')

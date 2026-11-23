@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { env } from '../config/env.js';
 import { ErroNaoAutenticado, ErroSemPermissao } from '../domain/index.js';
 import type { ParceiroRepository, PermissaoParceiro } from '../modules/parceiro/parceiro.repository.js';
 import { calcularHashApiKey } from '../modules/parceiro/parceiro.service.js';
@@ -71,4 +72,21 @@ export function obterParceiroRequisicao(request: FastifyRequest): ParceiroAutent
     throw new ErroNaoAutenticado('Chave de API inválida ou inativa');
   }
   return request.parceiro;
+}
+
+/**
+ * Configuração de rate limit por chave de API (X-Api-Key) para as rotas públicas.
+ * Usa o valor de `x-api-key` como keyGenerator (com fallback para IP).
+ */
+export function criarConfigRateLimitApiKey() {
+  return {
+    rateLimit: {
+      max: env.API_KEY_RATE_LIMIT_MAX,
+      timeWindow: '1 minute',
+      keyGenerator: (request: FastifyRequest): string => {
+        const chave = extrairApiKeyHeader(request);
+        return chave ?? request.ip;
+      },
+    },
+  };
 }

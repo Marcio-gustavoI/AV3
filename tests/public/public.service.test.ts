@@ -239,4 +239,29 @@ describe('PublicService (AV3 — Pilar 2: API Pública)', () => {
     const resJob = await service.obterResultadoJob(PARCEIRO_COMPLETO, 'job-1');
     expect(resJob.concluido).toBe(false);
   });
+
+  it('retorna 403 "Parceiro sem organização vinculada" quando organizacaoId é null', async () => {
+    const parceiroSemOrg: ParceiroAutenticado = {
+      ...PARCEIRO_COMPLETO,
+      organizacaoId: null,
+    };
+
+    await expect(
+      service.consultarRastreabilidade(parceiroSemOrg, 'GC-000001'),
+    ).rejects.toThrow('Parceiro sem organização vinculada');
+
+    await expect(service.listarLotes(parceiroSemOrg, {})).rejects.toThrow(
+      'Parceiro sem organização vinculada',
+    );
+
+    await expect(
+      service.submeterLote(parceiroSemOrg, {
+        organizacaoId: '00000000-0000-0000-0000-000000000501',
+        notaFiscal: 'NF-SEM-ORG',
+        transportadora: 'EcoTrans',
+        dataEntrada: '2026-11-20',
+        equipamentos: [],
+      }),
+    ).rejects.toThrow('Parceiro sem organização vinculada');
+  });
 });

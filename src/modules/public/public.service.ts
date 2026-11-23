@@ -84,11 +84,19 @@ export class PublicService {
     }
   }
 
+  private exigirOrganizacaoVinculada(parceiro: ParceiroAutenticado): string {
+    if (!parceiro.organizacaoId) {
+      throw new ErroSemPermissao('Parceiro sem organização vinculada');
+    }
+    return parceiro.organizacaoId;
+  }
+
   async consultarRastreabilidade(
     parceiro: ParceiroAutenticado,
     codigoBarras: string,
   ): Promise<RastreabilidadePublicaResposta> {
     this.exigirPermissao(parceiro, PermissaoParceiro.LEITURA_RASTREABILIDADE);
+    const organizacaoIdParceiro = this.exigirOrganizacaoVinculada(parceiro);
 
     const codigoNormalizado = codigoBarras.trim().toUpperCase();
     const equipamento = await this.equipamentoRepo.buscarPorCodigoBarras(codigoNormalizado);
@@ -105,7 +113,7 @@ export class PublicService {
       );
     }
 
-    if (parceiro.organizacaoId && detalhe.organizacao.id !== parceiro.organizacaoId) {
+    if (detalhe.organizacao.id !== organizacaoIdParceiro) {
       throw new ErroSemPermissao(
         'Parceiro não tem acesso a equipamentos de outra organização.',
       );
@@ -137,22 +145,18 @@ export class PublicService {
     input: ListarLotesPublicoInput,
   ): Promise<ListarLotesPublicoResposta> {
     this.exigirPermissao(parceiro, PermissaoParceiro.LEITURA_LOTES);
+    const organizacaoIdParceiro = this.exigirOrganizacaoVinculada(parceiro);
 
-    if (
-      parceiro.organizacaoId &&
-      input.organizacaoId &&
-      input.organizacaoId !== parceiro.organizacaoId
-    ) {
+    if (input.organizacaoId && input.organizacaoId !== organizacaoIdParceiro) {
       throw new ErroSemPermissao('Parceiro só pode consultar lotes da própria organização.');
     }
 
-    const organizacaoFiltro = parceiro.organizacaoId ?? input.organizacaoId;
     const resultado = await this.loteService.listar(
       { id: '', papel: Papel.GESTOR_ALMOXARIFADO },
       {
         pagina: input.page ?? 1,
         tamanhoPagina: input.limit ?? 20,
-        organizacaoId: organizacaoFiltro,
+        organizacaoId: organizacaoIdParceiro,
       },
     );
 
@@ -176,8 +180,9 @@ export class PublicService {
     input: SubmeterLotePublicoInput,
   ): Promise<LotePublicoCriadoResposta> {
     this.exigirPermissao(parceiro, PermissaoParceiro.ESCRITA_LOTES);
+    const organizacaoIdParceiro = this.exigirOrganizacaoVinculada(parceiro);
 
-    if (parceiro.organizacaoId && input.organizacaoId !== parceiro.organizacaoId) {
+    if (input.organizacaoId !== organizacaoIdParceiro) {
       throw new ErroSemPermissao('Parceiro só pode submeter lotes para a própria organização.');
     }
 

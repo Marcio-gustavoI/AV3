@@ -1,5 +1,4 @@
 import 'dotenv/config';
-import type { Worker } from 'bullmq';
 import type { ScheduledTask } from 'node-cron';
 import { buildApp } from './app.js';
 import { env } from './config/env.js';
@@ -9,14 +8,12 @@ import { prisma } from './lib/prisma.js';
 import { PrismaAnaliticoRepository } from './modules/analitico/analitico.repository.js';
 import { AnaliticoService } from './modules/analitico/analitico.service.js';
 import { PrismaJobRepository } from './modules/job/job.repository.js';
-import type { PayloadFilaRelatorio } from './modules/job/job.service.js';
 import { PrismaParametroRepository } from './modules/parametro/parametro.repository.js';
-import { iniciarWorkerRelatorio } from './workers/relatorio.worker.js';
+import { fecharWorker, iniciarWorkerRelatorio } from './workers/relatorio.worker.js';
 
 async function start(): Promise<void> {
   const app = await buildApp();
 
-  let workerRelatorio: Worker<PayloadFilaRelatorio> | null = null;
   let cronAnalitico: ScheduledTask | null = null;
 
   // Graceful shutdown (A2-05 + encerramento limpo de Worker BullMQ e Cron da AV3)
@@ -40,10 +37,7 @@ async function start(): Promise<void> {
         cronAnalitico.stop();
         cronAnalitico = null;
       }
-      if (workerRelatorio) {
-        await workerRelatorio.close();
-        workerRelatorio = null;
-      }
+      await fecharWorker();
       await app.close();
       await prisma.$disconnect();
       logger.info('Servidor e conexões encerrados com sucesso.');
@@ -92,7 +86,7 @@ async function start(): Promise<void> {
     );
 
     if (env.WORKER_HABILITADO) {
-      workerRelatorio = iniciarWorkerRelatorio({
+      iniciarWorkerRelatorio({
         jobRepo: new PrismaJobRepository(prisma),
         analiticoService,
       });

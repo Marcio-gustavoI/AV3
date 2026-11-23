@@ -17,6 +17,8 @@ export interface DependenciasWorkerRelatorio {
   analiticoService: AnaliticoService;
 }
 
+let workerAtivo: Worker<PayloadFilaRelatorio> | null = null;
+
 function extrairFiltroPeriodo(
   parametros?: Record<string, unknown> | null,
 ): FiltroPeriodoString | undefined {
@@ -28,11 +30,12 @@ function extrairFiltroPeriodo(
 }
 
 /**
- * Processa um único job de relatório analítico:
- * - Atualiza status para PROCESSANDO (progresso 25%).
- * - Executa o cálculo correspondente no AnaliticoService.
- * - Salva o resultado e marca como CONCLUIDO (100%) com concluidoEm.
- * - Em caso de erro, registra status=ERRO, mensagem e incrementa tentativas,
+ * Processa um único job de relatório analítico com atualização granular de progresso:
+ * - Ao iniciar: status=PROCESSANDO, progresso=10
+ * - Após preparar consulta/parâmetros: progresso=40
+ * - Após calcular estatísticas: progresso=80
+ * - Ao finalizar: status=CONCLUIDO, progresso=100, resultado e concluidoEm
+ * - Em caso de erro: registra status=ERRO, mensagem e incrementa tentativas,
  *   relançando o erro para que o BullMQ aplique o retry exponencial (1s, 2s, 4s).
  */
 export async function processarJobRelatorio(
@@ -41,19 +44,25 @@ export async function processarJobRelatorio(
 ): Promise<unknown> {
   const { jobId, tipo, parametros } = payload;
 
+  // Etapa 1: início do processamento (10%)
   await deps.jobRepo.atualizar(jobId, {
     status: StatusJobRelatorio.PROCESSANDO,
-    progresso: 25,
+    progresso: 10,
     erro: null,
   });
 
   try {
+    const filtroPeriodo = extrairFiltroPeriodo(parametros);
+
+    // Etapa 2: preparação e coleta de dados do banco (40%)
+    await deps.jobRepo.atualizar(jobId, {
+      progresso: 40,
+    });
+
     let resultado: unknown;
     switch (tipo) {
       case TipoJobRelatorio.EFICIENCIA:
-        resultado = await deps.analiticoService.calcularEficienciaOperacional(
-          extrairFiltroPeriodo(parametros),
-        );
+        resultado = await deps.analiticoService.calcularEficienciaOperacional(filtroPeriodo);
         break;
       case TipoJobRelatorio.RENTABILIDADE:
         resultado = await deps.analiticoService.calcularRentabilidadePorTipo();
@@ -63,6 +72,12 @@ export async function processarJobRelatorio(
         break;
     }
 
+    // Etapa 3: cálculos estatísticos finalizados (80%)
+    await deps.jobRepo.atualizar(jobId, {
+      progresso: 80,
+    });
+
+    // Etapa 4: conclusão e persistência do resultado (100%)
     await deps.jobRepo.atualizar(jobId, {
       status: StatusJobRelatorio.CONCLUIDO,
       progresso: 100,
@@ -110,5 +125,17 @@ export function iniciarWorkerRelatorio(
     );
   });
 
+  workerAtivo = worker;
   return worker;
+}
+
+/**
+ * Encerra o worker BullMQ de forma limpa durante o graceful shutdown do servidor.
+ */
+export async function fecharWorker(): Promise<void> {
+  if (workerAtivo) {
+    const instancia = workerAtivo;
+    workerAtivo = null;
+    await instancia.close();
+  }
 }

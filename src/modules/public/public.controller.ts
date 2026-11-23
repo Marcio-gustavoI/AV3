@@ -1,11 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import { Type } from '@sinclair/typebox';
-import { env } from '../../config/env.js';
 import { EstadoFisico, TipoEquipamento } from '../../domain/index.js';
+import { converterParaCsv } from '../../lib/csv.js';
 import {
+  criarConfigRateLimitApiKey,
   exigirPermissaoParceiro,
-  extrairApiKeyHeader,
   obterParceiroRequisicao,
   registrarAutenticacaoApiKey,
 } from '../../plugins/api-key-auth.js';
@@ -279,16 +279,7 @@ export function registrarRotasPublicas(
   // Autenticação por X-Api-Key aplicada a todas as rotas deste plugin encapsulado
   registrarAutenticacaoApiKey(servidor, parceiroRepo);
 
-  const configRateLimitPorChave = {
-    rateLimit: {
-      max: env.API_KEY_RATE_LIMIT_MAX,
-      timeWindow: '1 minute',
-      keyGenerator: (request: { headers: Record<string, string | string[] | undefined>; ip: string }) => {
-        const chave = extrairApiKeyHeader(request as Parameters<typeof extrairApiKeyHeader>[0]);
-        return chave ? `apikey:${chave}` : `ip:${request.ip}`;
-      },
-    },
-  };
+  const configRateLimitPorChave = criarConfigRateLimitApiKey();
 
   servidor.get(
     '/rastreabilidade/:codigoBarras',
@@ -452,13 +443,28 @@ export function registrarRotasPublicas(
       schema: {
         tags: ['API Pública'],
         security: [{ apiKeyAuth: [] }],
-        summary: 'Obtém o resultado JSON de um job concluído ou 202 se ainda em processamento',
-        description: 'Padrão polling: retorna 200 quando CONCLUIDO e 202 enquanto PENDENTE/PROCESSANDO.',
+        summary: 'Obtém o resultado de um job concluído (JSON ou CSV) ou 202 se ainda em processamento',
+        description: 'Padrão polling: retorna 200 quando CONCLUIDO (aceita ?formato=json ou ?formato=csv) e 202 enquanto PENDENTE/PROCESSANDO.',
         params: JobPublicoParamsSchema,
+        querystring: Type.Object(
+          {
+            formato: Type.Optional(
+              Type.Union([Type.Literal('json'), Type.Literal('csv')], {
+                default: 'json',
+                title: 'Formato',
+                description: 'Formato de exportação do relatório (json ou csv).',
+              }),
+            ),
+          },
+          {
+            title: 'ResultadoJobPublicoQuery',
+            description: 'Formato opcional de download do relatório.',
+          },
+        ),
         response: {
           200: Type.Unknown({
             title: 'ResultadoJobPublicoConcluido',
-            description: 'Payload JSON do relatório concluído.',
+            description: 'Payload JSON ou CSV do relatório concluído.',
           }),
           202: Type.Object(
             {
@@ -474,6 +480,14 @@ export function registrarRotasPublicas(
       const dados = await publicService.obterResultadoJob(parceiro, request.params.id);
       if (!dados.concluido) {
         return reply.status(202).send({ mensagem: 'Relatório ainda em processamento' });
+      }
+      if (request.query.formato === 'csv') {
+        const csv = converterParaCsv(dados.resultado);
+        return reply
+          .status(200)
+          .header('Content-Type', 'text/csv; charset=utf-8')
+          .header('Content-Disposition', `attachment; filename="relatorio-${request.params.id}.csv"`)
+          .send(csv);
       }
       return reply.status(200).send(dados.resultado);
     },
