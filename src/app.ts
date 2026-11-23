@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
+import { Type } from '@sinclair/typebox';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import jwt from '@fastify/jwt';
@@ -124,11 +125,55 @@ export async function buildApp(opcoes?: OpcoesBuildApp) {
   // Documentação OpenAPI / Swagger em /docs
   await registrarSwagger(app);
 
+  // 🥚 Easter egg
+  app.get(
+    '/e-waste-hunter',
+    {
+      schema: {
+        hide: true,
+        querystring: Type.Object({
+          nivel: Type.Optional(Type.String()),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const { nivel } = request.query as { nivel?: string };
+
+      if (nivel === 'lixo') {
+        return reply.status(200).send({
+          status: 'DESTINADO',
+          mensagem: '♻️ Nível LIXO desbloqueado. Mas aqui nada vira lixo — tudo tem destino.',
+          conquista: 'E-Waste Hunter Nível 1',
+          proxima_dica: 'Tente nivel=triagem',
+        });
+      }
+
+      if (nivel === 'triagem') {
+        return reply.status(200).send({
+          status: 'TRIADO',
+          mensagem: '🔍 Nível TRIAGEM desbloqueado. Você separou o que é valioso do que é descarte.',
+          conquista: 'E-Waste Hunter Nível 2',
+          proxima_dica: 'Tente nivel=destinado',
+        });
+      }
+
+      if (nivel === 'destinado') {
+        return reply.status(200).send({
+          status: 'CONCLUIDO',
+          mensagem: '🌱 Parabéns, você completou o ciclo do greencode!',
+          conquista: 'E-Waste Hunter — Ciclo Completo',
+          fato: 'Um smartphone contém mais de 60 elementos químicos diferentes. Reciclar 1 milhão de celulares recupera ~16 kg de ouro, 350 kg de prata e 15.000 kg de cobre.',
+          assinatura: 'greencode v3 — logística reversa inteligente',
+        });
+      }
+
+      // sem parâmetro ou parâmetro inválido → 404 genérico
+      return reply.status(404).send({ erro: 'NOT_FOUND', mensagem: 'Rota não encontrada.' });
+    },
+  );
+
   // Error handler e not found
   registrarErrorHandler(app);
-
-  // Hook global de autenticação
-  registrarHookAutenticacao(app);
 
   // Rota pública de saúde (sem prefixo /api/v1)
   app.get(
@@ -265,6 +310,9 @@ export async function buildApp(opcoes?: OpcoesBuildApp) {
   // Registro das rotas /api/v1 (internas + novas AV3)
   await app.register(
     async (api) => {
+      // Hook de autenticação JWT aplicado a todas as rotas internas /api/v1/*
+      registrarHookAutenticacao(api);
+
       registrarRotasAuth(api, authService);
       registrarRotasUsuario(api, usuarioService);
       registrarRotasParametro(api, parametroService);
